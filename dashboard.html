@@ -1,0 +1,781 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Day-Trading Lab</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<script>if (localStorage.getItem("theme") === "dark") document.documentElement.dataset.theme = "dark";  // light by default</script>
+<style>
+/* Calm, minimal design: a sidebar, white cards on warm stone, one typeface (Inter, tabular numbers), one muted
+   indigo accent. Colour carries meaning only: green/red for profit and loss, and each bot's colour in the chart
+   (the validated 8-slot categorical palette; nr4 and swing are past slot 8). Light by default, dark on request. */
+:root {
+  --bg: #f6f5f2; --card: #ffffff; --hover: #f3f2ee; --line: #ebe9e3; --line-2: #dedbd3;
+  --ink: #1d1c1a; --ink-2: #6f6c66; --ink-3: #a29e96;
+  --accent: #4450b8; --accent-bg: #eef0fb;
+  --up: #237a57; --down: #c2453d; --up-bg: #e8f4ee; --down-bg: #fbecea;
+  --bot-gapper: #2a78d6; --bot-orb: #eb6834; --bot-loser: #1baf7a; --bot-breakout: #eda100; --bot-gapfade: #e87ba4;
+  --bot-gapgo: #008300; --bot-vwapband: #6250d6; --bot-squeeze: #e34948; --bot-nr4: #9a6b3f; --bot-swing: #0e8a8a;
+  --bot-control: #57544e; --bench: #aaa69d; --ghost: #e4e2db;
+  --shadow: 0 1px 2px rgb(30 28 24 / .04), 0 1px 1px rgb(30 28 24 / .02);
+  --font: "Inter", system-ui, -apple-system, sans-serif;
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  --bg: #151513; --card: #1d1d1a; --hover: #252522; --line: #2b2a26; --line-2: #383631;
+  --ink: #edebe5; --ink-2: #a9a59c; --ink-3: #726f68;
+  --accent: #8f9bf0; --accent-bg: #252a45;
+  --up: #4fbf8b; --down: #f0796f; --up-bg: #18291f; --down-bg: #33201d;
+  --bot-gapper: #3987e5; --bot-orb: #d95926; --bot-loser: #199e70; --bot-breakout: #c98500; --bot-gapfade: #d55181;
+  --bot-gapgo: #008300; --bot-vwapband: #9085e9; --bot-squeeze: #e66767; --bot-nr4: #b88a5c; --bot-swing: #3cc7c0;
+  --bot-control: #c9c5bc; --bench: #7a776f; --ghost: #2f2e2a;
+  --shadow: none;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--ink); }
+body { font: 14px/1.55 var(--font); -webkit-font-smoothing: antialiased; }
+/* tabular figures only where numbers line up (they also widen hyphens, so not in running text) */
+td.r, .figure .v, .equity, .kpis .v, .botlist .small, .events time, .context b, .tip { font-variant-numeric: tabular-nums; }
+h1, h2, h3 { margin: 0; font-weight: 600; letter-spacing: -0.01em; line-height: 1.25; }
+h1 { font-size: 1.5rem; letter-spacing: -0.02em; }
+h2 { font-size: 0.95rem; }
+a { color: var(--accent); text-decoration: none; } a:hover { text-decoration: underline; }
+.muted { color: var(--ink-2); } .faint { color: var(--ink-3); } .small { font-size: 0.8rem; }
+.up { color: var(--up); } .down { color: var(--down); }
+.label { font-size: 0.75rem; color: var(--ink-2); font-weight: 500; }
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.btn { border: 1px solid var(--line-2); background: var(--card); border-radius: 8px; padding: 6px 12px; font-weight: 500; font-size: 0.84rem; }
+.btn:hover { background: var(--hover); }
+.btn:disabled { opacity: .55; cursor: default; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn.danger { color: var(--down); }
+.btn.quiet { border-color: transparent; background: transparent; color: var(--ink-2); }
+.btn.quiet:hover { background: var(--hover); }
+
+/* shell: sidebar + content */
+.shell { display: grid; grid-template-columns: 228px minmax(0, 1fr); min-height: 100vh; }
+aside { position: sticky; top: 0; height: 100vh; padding: 22px 14px; display: flex; flex-direction: column; gap: 22px; border-right: 1px solid var(--line); }
+.brand { display: flex; align-items: center; gap: 10px; padding: 0 8px; }
+.brand .mark { width: 28px; height: 28px; border-radius: 8px; background: var(--accent); display: grid; place-items: center; }
+.brand b { font-weight: 600; font-size: 0.95rem; letter-spacing: -0.01em; }
+nav.side { display: grid; gap: 2px; }
+nav.side button { display: flex; align-items: center; gap: 10px; text-align: left; border: 0; background: none; border-radius: 8px; padding: 8px 10px; color: var(--ink-2); font-weight: 500; }
+nav.side button svg { width: 17px; height: 17px; flex: none; }
+nav.side button:hover { background: var(--hover); color: var(--ink); }
+nav.side button[aria-current="page"] { background: var(--card); color: var(--ink); box-shadow: var(--shadow); outline: 1px solid var(--line); }
+.side-foot { margin-top: auto; display: grid; gap: 10px; padding: 0 8px; font-size: 0.8rem; color: var(--ink-2); }
+.st { display: flex; align-items: center; gap: 8px; }
+.st .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--ink-3); flex: none; }
+.st.live .dot { background: var(--up); box-shadow: 0 0 0 3px var(--up-bg); }
+.st.warn { color: var(--down); } .st.warn .dot { background: var(--down); }
+@media (max-width: 860px) {
+  .shell { grid-template-columns: minmax(0, 1fr); }
+  aside { position: sticky; top: 0; z-index: 5; height: auto; flex-direction: row; align-items: center; gap: 12px; padding: 10px 12px; border-right: 0; border-bottom: 1px solid var(--line); background: var(--bg); overflow-x: auto; }
+  nav.side { display: flex; } nav.side button span { white-space: nowrap; } nav.side button svg { display: none; }
+  .brand span.txt, .side-foot .st { display: none; }
+  .side-foot { margin: 0 0 0 auto; padding: 0; }
+}
+
+main { padding: 32px 40px 64px; max-width: 1240px; width: 100%; }
+@media (max-width: 860px) { main { padding: 20px 14px 48px; } }
+[data-view] { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; }
+[data-view][hidden] { display: none; }
+.page-head { display: flex; justify-content: space-between; align-items: end; gap: 12px 24px; flex-wrap: wrap; margin-bottom: 4px; }
+.page-head p { margin: 4px 0 0; color: var(--ink-2); }
+.progress { display: grid; gap: 6px; min-width: 220px; }
+.progress .track { height: 4px; border-radius: 99px; background: var(--line); overflow: hidden; }
+.progress .track i { display: block; height: 100%; background: var(--accent); border-radius: 99px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 22px 24px; box-shadow: var(--shadow); min-width: 0; }
+.card-head { display: flex; justify-content: space-between; align-items: center; gap: 10px 16px; flex-wrap: wrap; margin-bottom: 16px; }
+.two { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+@media (max-width: 1000px) { .two { grid-template-columns: minmax(0, 1fr); } }
+.empty { padding: 18px 0; color: var(--ink-3); font-size: 0.88rem; }
+
+/* key figures */
+.figures { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px; }
+@media (max-width: 1100px) { .figures { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 760px) { .figures { grid-template-columns: minmax(0, 1fr); } }
+.figure { display: grid; gap: 6px; }
+.figure .v { font-size: 1.9rem; font-weight: 600; letter-spacing: -0.03em; line-height: 1.1; }
+.figure .sub { font-size: 0.82rem; color: var(--ink-2); }
+
+/* tables */
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 0.86rem; }
+th { text-align: left; font-size: 0.74rem; color: var(--ink-3); font-weight: 500; padding: 0 10px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+td { padding: 11px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+tr:last-child td { border-bottom: 0; }
+th:first-child, td:first-child { padding-left: 0; } th:last-child, td:last-child { padding-right: 0; }
+td.wrap { white-space: normal; min-width: 180px; color: var(--ink-2); }
+td.r, th.r { text-align: right; }
+tr.go { cursor: pointer; } tr.go:hover td { background: var(--hover); }
+tr.paused td { color: var(--ink-3); }
+.name { font-weight: 500; }
+.pill { display: inline-block; font-size: 0.7rem; font-weight: 500; padding: 1px 8px; border-radius: 99px; background: var(--hover); color: var(--ink-2); margin-left: 8px; }
+.pill.long { background: var(--up-bg); color: var(--up); } .pill.short { background: var(--down-bg); color: var(--down); }
+.pill.running { background: var(--up-bg); color: var(--up); margin: 0; }
+.pill.paused { margin: 0; }
+
+/* chart */
+.legend { display: flex; flex-wrap: wrap; gap: 6px; }
+.legend button { display: inline-flex; gap: 6px; align-items: center; font-size: 0.78rem; border: 1px solid var(--line); background: var(--card); border-radius: 99px; padding: 3px 10px 3px 8px; color: var(--ink-3); }
+.legend button:hover { color: var(--ink); }
+.legend button[aria-pressed="true"] { color: var(--ink); border-color: var(--line-2); }
+.legend i { width: 8px; height: 8px; border-radius: 50%; background: var(--ghost); }
+.legend button[aria-pressed="true"] i { background: var(--c); }
+.legend-note { font-size: 0.78rem; color: var(--ink-3); margin-top: 10px; }
+.chart { position: relative; }
+.chart svg { display: block; width: 100%; height: auto; touch-action: none; }
+.tip { position: absolute; pointer-events: none; background: var(--card); border: 1px solid var(--line-2); border-radius: 10px; padding: 10px 12px; font-size: 0.8rem; box-shadow: 0 8px 24px rgb(0 0 0 / .1); min-width: 180px; }
+.tip div { display: flex; justify-content: space-between; gap: 16px; }
+.dot-c { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--c); margin-right: 8px; }
+
+/* activity */
+.events { list-style: none; margin: 0; padding: 0; display: grid; }
+.events li { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--line); font-size: 0.85rem; }
+.events li:last-child { border-bottom: 0; }
+.events time { color: var(--ink-3); font-size: 0.78rem; }
+.events b { font-weight: 500; }
+
+/* bots */
+.bots-layout { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 20px; align-items: start; }
+@media (max-width: 900px) { .bots-layout { grid-template-columns: minmax(0, 1fr); } }
+.botlist { display: grid; gap: 2px; position: sticky; top: 24px; }
+.botlist button { display: flex; justify-content: space-between; gap: 10px; border: 0; background: none; border-radius: 8px; padding: 8px 10px; text-align: left; color: var(--ink-2); }
+.botlist button:hover { background: var(--hover); color: var(--ink); }
+.botlist button[aria-current="true"] { background: var(--card); color: var(--ink); box-shadow: var(--shadow); outline: 1px solid var(--line); }
+.botlist .grp { padding: 14px 10px 6px; font-size: 0.72rem; color: var(--ink-3); font-weight: 500; }
+@media (max-width: 900px) { .botlist { position: static; display: flex; overflow-x: auto; } .botlist .grp { display: none; } .botlist button { flex: none; } }
+.detail { display: grid; grid-template-columns: minmax(0, 1fr); gap: 26px; }
+.detail-head { display: flex; justify-content: space-between; gap: 12px; align-items: start; }
+.detail-head h1 { font-size: 1.6rem; }
+.detail-head p { margin: 6px 0 0; color: var(--ink-2); max-width: 65ch; }
+.equity { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.equity .big { font-size: 2.2rem; font-weight: 600; letter-spacing: -0.03em; }
+.kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; padding: 16px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+@media (max-width: 600px) { .kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.kpis div { display: grid; gap: 2px; } .kpis .v { font-weight: 600; font-size: 1.05rem; }
+.extra { display: flex; flex-wrap: wrap; gap: 4px 20px; font-size: 0.8rem; color: var(--ink-2); margin-top: 10px; }
+.how { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 10px 20px; margin: 0; }
+.how dt { color: var(--ink-3); font-size: 0.8rem; font-weight: 500; padding-top: 1px; }
+.how dd { margin: 0; max-width: 70ch; }
+@media (max-width: 600px) { .how { grid-template-columns: minmax(0, 1fr); gap: 2px; } .how dd { margin-bottom: 8px; } }
+h3 { font-size: 0.8rem; font-weight: 600; color: var(--ink-2); margin-bottom: 12px; }
+.actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* premarket */
+#pmBody { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; }
+.context { display: flex; flex-wrap: wrap; gap: 8px 28px; font-size: 0.85rem; }
+.context b { font-weight: 600; }
+.inplay { display: flex; flex-wrap: wrap; gap: 10px; }
+.inplay .chip { border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; display: grid; gap: 2px; min-width: 160px; }
+.inplay .chip b { font-size: 1rem; }
+.wl { display: grid; font-size: 0.85rem; }
+.wl div { display: grid; grid-template-columns: 56px 64px minmax(0, 1fr); gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.wl div:last-child { border-bottom: 0; }
+.ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 360px; display: inline-block; vertical-align: bottom; }
+
+
+/* stock symbols, dialogs, forms */
+.sym { cursor: pointer; font-weight: 600; border-bottom: 1px dashed var(--ink-3); }
+.sym:hover { color: var(--accent); border-color: var(--accent); }
+dialog { border: 1px solid var(--line); border-radius: 16px; background: var(--card); color: var(--ink); padding: 24px; width: min(580px, calc(100vw - 32px)); box-shadow: 0 20px 50px rgb(0 0 0 / .18); }
+dialog::backdrop { background: rgb(20 18 15 / .35); }
+dialog h2 { font-size: 1.1rem; margin-bottom: 6px; }
+#stockChart { width: min(1100px, calc(100vw - 32px)); padding: 18px; }
+.chart-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 12px; }
+.chart-head .btn { margin-left: auto; }
+#chartFrame { display: block; width: 100%; height: min(70vh, 640px); border: 0; border-radius: 10px; }
+.form { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; margin: 16px 0; }
+.field { display: grid; gap: 6px; }
+.field input:not([type=checkbox]), .field select { border: 1px solid var(--line-2); background: var(--card); border-radius: 8px; padding: 8px 10px; width: 100%; }
+.field.check { display: flex; align-items: center; gap: 8px; }
+.foot { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.note { font-size: 0.8rem; color: var(--ink-2); margin: 0; }
+.rules { margin: 0; padding-left: 18px; display: grid; gap: 8px; max-width: 80ch; }
+.filterbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+.filterbar select { border: 1px solid var(--line-2); background: var(--card); border-radius: 8px; padding: 6px 10px; }
+.toast { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--card); padding: 9px 18px; border-radius: 99px; font-size: 0.85rem; z-index: 10; }
+</style>
+</head>
+<body>
+<div class="shell">
+  <aside>
+    <div class="brand"><span class="mark" aria-hidden="true"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="#fff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 11.5 6 7.5l3 3 5-6"/></svg></span><b><span class="txt">Day-Trading Lab</span></b></div>
+    <nav class="side" aria-label="Sections">
+      <button type="button" data-tab="overview"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="3" y="3" width="6" height="6" rx="1.5"/><rect x="11" y="3" width="6" height="6" rx="1.5"/><rect x="3" y="11" width="6" height="6" rx="1.5"/><rect x="11" y="11" width="6" height="6" rx="1.5"/></svg><span>Overview</span></button>
+      <button type="button" data-tab="bots"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="6" width="12" height="10" rx="3"/><path d="M10 3v3M7.5 11h.01M12.5 11h.01" stroke-linecap="round"/></svg><span>Bots</span></button>
+      <button type="button" data-tab="trades"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 6h12M4 10h12M4 14h8"/></svg><span>Trades</span></button>
+      <button type="button" data-tab="premarket"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><circle cx="10" cy="10" r="3.2"/><path d="M10 2.5v2M10 15.5v2M2.5 10h2M15.5 10h2M4.7 4.7l1.4 1.4M13.9 13.9l1.4 1.4M4.7 15.3l1.4-1.4M13.9 6.1l1.4-1.4"/></svg><span>Premarket</span></button>
+      <button type="button" data-tab="settings"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 6h7M15 6h1M4 14h1M9 14h7"/><circle cx="13" cy="6" r="2"/><circle cx="7" cy="14" r="2"/></svg><span>Settings</span></button>
+    </nav>
+    <div class="side-foot">
+      <span id="marketPill" class="st"><span class="dot"></span><span>Loading…</span></span>
+      <span id="healthPill" class="st"><span class="dot"></span><span>Waiting for engine</span></span>
+      <button type="button" class="btn quiet" id="themeBtn" style="justify-self:start;padding:4px 8px;white-space:nowrap">Dark mode</button>
+    </div>
+  </aside>
+
+  <main>
+    <!-- OVERVIEW -->
+    <section data-view="overview">
+      <div class="page-head">
+        <div><h1>Overview</h1><p id="ovSub"></p></div>
+        <div class="progress"><span class="label" id="testLabel"></span><span class="track"><i id="testBar" style="width:0"></i></span></div>
+      </div>
+      <div class="card"><div class="figures" id="figures"></div></div>
+      <div class="card">
+        <div class="card-head"><h2>Return since the test started</h2><div class="legend" id="legend"></div></div>
+        <div class="chart" id="chart"></div>
+        <div class="legend-note">Coloured: the bots you pick above. Grey: the rest. Dotted: Control · dashed: SPY.</div>
+      </div>
+      <div class="two">
+        <div class="card">
+          <div class="card-head"><h2>Leaderboard</h2><span class="faint small">Select a bot for details</span></div>
+          <div class="table-wrap" id="board"></div>
+        </div>
+        <div style="display:grid;gap:20px">
+          <div class="card"><div class="card-head"><h2>Open positions</h2><span class="faint small">Close at 15:55 ET</span></div><div class="table-wrap" id="positions"></div></div>
+          <div class="card"><div class="card-head"><h2>Recent activity</h2></div><ul class="events" id="events"></ul></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- BOTS -->
+    <section data-view="bots" hidden>
+      <div class="page-head"><div><h1>Bots</h1><p>What each bot does and how it's doing.</p></div></div>
+      <div class="bots-layout">
+        <nav class="botlist" id="botlist" aria-label="Bots"></nav>
+        <div id="botDetail"></div>
+      </div>
+    </section>
+
+    <!-- TRADES -->
+    <section data-view="trades" hidden>
+      <div class="page-head"><div><h1>Trades</h1><p id="tradeSummary"></p></div>
+        <div class="filterbar"><select id="tradeFilter" aria-label="Filter by bot"></select></div></div>
+      <div class="card"><div class="table-wrap" id="trades"></div></div>
+    </section>
+
+    <!-- PREMARKET -->
+    <section data-view="premarket" hidden>
+      <div class="page-head"><div><h1 id="pmTitle">Premarket</h1><p id="pmMeta"></p></div><button class="btn" id="pmRefresh" type="button">Rebuild now</button></div>
+      <div id="pmBody"><div class="card empty">The report builds automatically at 09:00 New York time on trading days.</div></div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section data-view="settings" hidden>
+      <div class="page-head"><div><h1>Settings</h1><p>Simulates a small cash account at a US broker with IBKR-style fees.</p></div></div>
+      <div class="card">
+        <div class="card-head"><h2>Account rules</h2></div>
+        <ul class="rules">
+          <li><b>Individual stocks only.</b> The watchlist rejects funds and ETFs. SPY is shown as a benchmark only.</li>
+          <li><b>US listings only.</b> Foreign companies trade through their New York listings (ADRs), in USD during US hours.</li>
+          <li id="ruleAccount"></li>
+          <li id="ruleTax"></li>
+        </ul>
+        <form class="form" id="accountForm" onsubmit="return false">
+          <label class="field"><span class="label">Account type</span><select id="a-type" name="type">
+            <option value="cash">Cash account: long only, settled cash, no day-trade limit</option>
+            <option value="margin">Margin account: no day-trade limit, shorts only with $2,000+ equity</option></select></label>
+          <label class="field"><span class="label">Commission per share ($)</span><input type="number" step="any" min="0" id="a-commission_per_share" name="commission_per_share"></label>
+          <label class="field"><span class="label">Minimum per order ($)</span><input type="number" step="any" min="0" id="a-commission_min" name="commission_min"></label>
+          <label class="field"><span class="label">Maximum per order (% of value)</span><input type="number" step="any" min="0" id="a-commission_max_pct" name="commission_max_pct"></label>
+          <label class="field"><span class="label">Slippage per side (%)</span><input type="number" step="any" min="0" id="a-slippage_pct" name="slippage_pct"></label>
+          <label class="field"><span class="label">Tax estimate (%)</span><input type="number" step="any" min="0" id="a-tax_pct" name="tax_pct"></label>
+        </form>
+        <div class="foot"><p class="note">Tax figures are rough estimates to show the effect, not tax advice.</p><button class="btn" id="saveAccount" type="button">Save account rules</button></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><h2>Watchlist and test</h2></div>
+        <label class="field"><span class="label">Watchlist (US-listed individual stocks, comma-separated)</span><input type="text" id="watchlist"></label>
+        <div class="foot" style="margin-top:16px">
+          <button class="btn" id="saveWatchlist" type="button">Save watchlist</button>
+          <span id="restartWrap"><button class="btn danger" id="restartBtn" type="button">Restart 30-day test</button></span>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<dialog id="stockChart">
+  <div class="chart-head"><h2 id="chartTitle">Chart</h2><span class="faint small">5-min, live (TradingView)</span><button class="btn" type="button" id="chartClose">Close</button></div>
+  <iframe id="chartFrame" title="Live stock chart"></iframe>
+</dialog>
+
+<dialog id="settings">
+  <form method="dialog" id="settingsForm">
+    <h2 id="settingsTitle">Settings</h2>
+    <p class="note">Changes apply from the next bar. Each change is written to the activity log so you can match results to settings.</p>
+    <div class="form" id="settingsFields"></div>
+    <div class="foot">
+      <button class="btn quiet" type="button" id="settingsDefaults">Restore defaults</button>
+      <span style="display:flex;gap:8px"><button class="btn" value="cancel" type="submit" formnovalidate>Cancel</button><button class="btn primary" type="button" id="settingsSave">Save</button></span>
+    </div>
+  </form>
+</dialog>
+<div class="toast" id="toast" hidden></div>
+
+<script>
+const LABELS = {
+  risk_pct: "Risk per trade (% of equity, before the size cap)", max_position_pct: "Max position size (% of equity)", max_positions: "Max open positions",
+  rsi_entry: "Buy when RSI(2) is below", rsi_exit: "Sell when RSI(2) is above", atr_stop: "Stop distance (× ATR)",
+  atr_target: "Target distance (× ATR)", first_entry: "First entry (ET, HH:MM)", last_entry: "Last entry (ET, HH:MM)", flat_at: "Close positions at (ET, HH:MM; blank = hold to 15:55)",
+  max_trades_per_ticker_day: "Max trades per stock per day", range_minutes: "Opening range (minutes)", r_multiple: "Target (× risk)",
+  max_range_pct: "Skip if range is wider than (%)", allow_shorts: "Allow short trades", volume_mult: "Volume vs 20-bar average (×)",
+};
+// Plain-language explanation per strategy, shown under "How it works" on each bot card. Numbers come from the bot's
+// current settings (p); rows are [label, text].
+const HOW = {
+  gapper: (p) => [
+    ["The bet", "A stock that jumps before the open with unusually heavy early trading (usually news) often keeps rising that day."],
+    ["Stocks", "Only the \"in play\" stocks from the 09:00 premarket report: gapping up with unusual premarket volume. The report shows their news headlines, but news isn't part of the pick. Often 0–3 a day."],
+    ["Buys", `Only if the first 5 minutes (09:30–09:35) end higher than they started. Then it buys the first time a 5-minute bar closes above that opening high, until ${p.last_entry} ET. At most one trade a day.`],
+    ["Sells", "If price falls back below the opening 5-minute low (the stop), else at 15:55."],
+    ["Why it's here", "Based on a 2024 study of opening-range breakouts on stocks in play (Zarattini, Barbon & Aziz). Many days it won't trade at all; that's normal."],
+  ],
+  orb: (p) => [
+    ["The bet", "A stock trading far more than usual in the first minutes is \"in play\": something is happening, and the move tends to continue."],
+    ["Stocks", "At 09:35 it compares each of the ~104 universe stocks' first 5-minute volume with its usual first 5 minutes (14-day average) and takes the 2 most unusual, if their first bar went up."],
+    ["Buys", "Both right away at 09:35, about half the bot's money each."],
+    ["Sells", `A tight stop just ${p.stop_atr}× the stock's normal daily range below the buy price, else at 15:55. Expect many small stop-outs and a few big winners.`],
+    ["Why it's here", "One of only two of 15 tested algorithms still positive on stocks they weren't tuned on. Unproven: one trade made most of its test profit."],
+  ],
+  loser: (p) => [
+    ["The bet", "The stock that fell hardest over the past week tends to bounce back a little (short-term reversal)."],
+    ["Stocks", "The 09:10 scan picks the universe's worst performer over the last 5 days, but only if it's down 3% or more. Some days there's none."],
+    ["Buys", "At 09:35, whatever the first 5 minutes did, with about half the bot's money."],
+    ["Sells", `If it falls ${p.stop_atr}× its normal daily range below the buy price (the stop), else at 15:55.`],
+    ["Why it's here", "The other survivor of the 15-algorithm test: positive both in development and in the held-back weeks. Still unproven."],
+  ],
+  control: (p) => [
+    ["The bet", "None. It's the yardstick: what Weekly Loser's trade earns on a stock picked with no skill at all."],
+    ["Stocks", "One stock from the universe, drawn at random each day (the date seeds the draw, so it can be replayed)."],
+    ["Buys", "At 09:35, exactly like Weekly Loser, with about half its money."],
+    ["Sells", `Same as Weekly Loser: a stop ${p.stop_atr}× the normal daily range below the buy price, else at 15:55.`],
+    ["Why it's here", "Market moves, fees and luck hit both bots alike, so only the gap between Weekly Loser and Control is stock-picking skill. At the review a bot must beat Control to stay. Never paused."],
+  ],
+  breakout: (p) => [
+    ["The bet", "The first push out of the opening range carries on for a few minutes."],
+    ["Stocks", "Your watchlist."],
+    ["Buys", `Marks the high and low of the first ${p.range_minutes} minutes. Buys when a 5-minute bar closes above the high${p.allow_shorts ? " (or sells short when one closes below the low)" : ""}, until ${p.last_entry} ET. Skips stocks whose range is wider than ${p.max_range_pct}%. One trade per stock a day.`],
+    ["Sells", `Stop at the other side of the range; target the same distance in profit (${p.r_multiple}× the risk); everything closed at ${p.flat_at || "15:55"} ET.`],
+    ["Why it's here", "Kept running at your request in its first-15-minutes form. It lost money before costs in every test, so treat it as an experiment."],
+  ],
+  pullback: (p) => [
+    ["The bet", "In a stock that's trending up, a sharp short dip gets bought back quickly."],
+    ["Stocks", "Your watchlist."],
+    ["Buys", `When the 5-minute trend is up (50-bar average above the 200-bar one) and RSI(2), a measure of the last two bars' moves, drops below ${p.rsi_entry}: a sharp dip. Between ${p.first_entry} and ${p.last_entry} ET.`],
+    ["Sells", `When RSI(2) recovers above ${p.rsi_exit}, at a stop ${p.atr_stop}× the recent 5-minute range below the buy price, or at 15:55.`],
+    ["Why it's here", "Paused since 2026-10-13: over thousands of test trades it made about zero before costs."],
+  ],
+  vwap: (p) => [
+    ["The bet", "When price crosses VWAP (today's average price paid, weighted by volume) on heavy volume, it tends to keep going that way."],
+    ["Stocks", "Your watchlist."],
+    ["Buys", `When a 5-minute bar closes back above VWAP on ${p.volume_mult}× normal volume while the short trend points up${p.allow_shorts ? " (shorts the mirror image)" : ""}. Between ${p.first_entry} and ${p.last_entry} ET.`],
+    ["Sells", `Stop ${p.atr_stop}× and target ${p.atr_target}× the recent 5-minute range, when price closes back across VWAP, or at 15:55.`],
+    ["Why it's here", "Paused since 2026-10-13: over 1,700 test trades it made about zero before costs."],
+  ],
+  gapfade: (p) => [
+    ["The bet", "A stock that opens lower than yesterday's close often climbs back to fill the gap."],
+    ["Stocks", "Six tech stocks: AMD, NVDA, TSLA, META, AAPL, MSFT (the stress test's set)."],
+    ["Buys", `When a stock opened ${p.gap_min}-${p.gap_max}% below yesterday's close and a 5-minute bar first closes back above today's open, 09:40-10:30 ET. One trade per stock a day.`],
+    ["Sells", "At yesterday's close (the gap filled), at a stop at today's low so far, or at 15:55."],
+    ["Why it's here", "One of 5 extra bots added 2026-10-13 so the 30 days compare more ideas. It failed the 15-algorithm stress test (−1.0% net in development, 0 of 6 checks); expect it to lose. Same review rules: it must beat its fees and Control to stay."],
+  ],
+  gapgo: (p) => [
+    ["The bet", "A gap up that holds for the first half hour keeps going for the rest of the day."],
+    ["Stocks", "Six tech stocks: AMD, NVDA, TSLA, META, AAPL, MSFT (the stress test's set)."],
+    ["Buys", `At 10:00, stocks that opened ${p.gap_min}-8% higher and are still above their open and VWAP; the 2 biggest gaps.`],
+    ["Sells", "At a stop at the day's low so far, else at 15:55."],
+    ["Why it's here", "One of 5 extra bots added 2026-10-13 so the 30 days compare more ideas. It failed the 15-algorithm stress test (+0.5% net in development, 2 of 6 checks); expect it to lose. Same review rules: it must beat its fees and Control to stay."],
+  ],
+  vwapband: (p) => [
+    ["The bet", "A stock pushed far below today's average price (VWAP) snaps back toward it."],
+    ["Stocks", "Six tech stocks: AMD, NVDA, TSLA, META, AAPL, MSFT (the stress test's set)."],
+    ["Buys", `A green 5-minute bar that closes ${p.band_sigma} standard deviations below VWAP, 10:30-14:30 ET. One trade per stock a day.`],
+    ["Sells", `Back at VWAP, at a stop ${p.stop_sigma} standard deviation lower, or at 15:55.`],
+    ["Why it's here", "One of 5 extra bots added 2026-10-13 so the 30 days compare more ideas. It failed the 15-algorithm stress test (+1.2% net in development, 4 of 6 checks, the best of the five); expect it to lose. Same review rules: it must beat its fees and Control to stay."],
+  ],
+  squeeze: (p) => [
+    ["The bet", "A quiet lunchtime range breaks out in the afternoon, and the break carries on."],
+    ["Stocks", "Six tech stocks: AMD, NVDA, TSLA, META, AAPL, MSFT (the stress test's set)."],
+    ["Buys", `If the 11:30-13:30 range is at most ${p.width_atr}× the normal daily range: the first 5-minute close above its high, 13:35-15:00 ET.`],
+    ["Sells", "At a stop at the bottom of that range, else at 15:55."],
+    ["Why it's here", "One of 5 extra bots added 2026-10-13 so the 30 days compare more ideas. It failed the 15-algorithm stress test (−3.4% net in development, 1 of 6 checks); expect it to lose. Same review rules: it must beat its fees and Control to stay."],
+  ],
+  nr4: (p) => [
+    ["The bet", `A very quiet day (the narrowest range of the last ${p.nr_n}) is often followed by a big move.`],
+    ["Stocks", "Six tech stocks: AMD, NVDA, TSLA, META, AAPL, MSFT (the stress test's set)."],
+    ["Buys", "The first 5-minute close above yesterday's high, 09:45-14:00 ET."],
+    ["Sells", "At a stop at yesterday's low, else at 15:55."],
+    ["Why it's here", "One of 5 extra bots added 2026-10-13 so the 30 days compare more ideas. It failed the 15-algorithm stress test (−0.1% net in development, 0 of 6 checks); expect it to lose. Same review rules: it must beat its fees and Control to stay."],
+  ],
+  swing: (p) => [
+    ["The bet", "A stock in a long uptrend that drops sharply for a couple of days usually bounces within a week (Larry Connors' RSI(2) rule)."],
+    ["Stocks", "Six tech stocks: AMD, NVDA, TSLA, META, AAPL, MSFT (the stress test's set)."],
+    ["Buys", `At 15:50 ET, if the stock is above its 200-day average and its daily RSI(2), a measure of the last two days' moves, is below ${p.rsi_entry}: a sharp dip in an uptrend.`],
+    ["Sells", `At 15:50 on a later day once it closes above its ${p.sma_exit}-day average, after ${p.max_days} trading days at the latest, or at a ${p.stop_pct}% safety stop. Holds overnight, so it's the only bot not flat at the close.`],
+    ["Why it's here", "The best of the 15 tested algorithms (5 of 6 checks, positive on both stock sets), added 2026-10-13. But it trades rarely: 8 trades in the 49 test days, so 30 days will show only a handful. Same review rules."],
+  ],
+};
+const SHARED_HOW = "All bots: $1,000 each, at most half the money in one stock and 2 stocks at once, IBKR fees, everything sold by 15:55 ET (except Swing RSI(2), which holds overnight).";
+
+
+const TABS = ["overview", "bots", "trades", "premarket", "settings"];
+const CORE = ["gapper", "orb", "loser"];  // coloured in the chart by default: the pre-registered line-up
+let S = null, tab = "overview", selBot = null, tradeFilter = "all", confirmReset = null, confirmRestart = false, editing = null;
+let hl = new Set(JSON.parse(localStorage.getItem("chartHighlight") || "null") || CORE), CH = null;
+const $ = (s) => document.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const sym = (t) => `<span class="sym" data-sym="${esc(t)}" title="Show live chart">${esc(t)}</span>`;  // click opens the chart dialog
+const money = (v, sign) => {
+  if (v == null) return "–";
+  if (Math.abs(v) < 0.005) v = 0;  // no "−$0.00"
+  return (sign ? (v >= 0 ? "+" : "−") : (v < 0 ? "−" : "")) + "$" + Math.abs(v).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+};
+const pct = (v) => v == null ? "–" : (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(2) + "%";
+const cls = (v) => v > 0 ? "up" : v < 0 ? "down" : "";
+const color = (id) => `var(--bot-${id}, var(--ink-3))`;
+const botOf = (id) => S.bots.find((x) => x.id === id) || { id, name: id };
+const localTime = (ts) => new Date(ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+const localDay = (ts) => new Date(ts * 1000).toLocaleDateString([], { day: "numeric", month: "short" });
+const ordered = () => [...S.bots].sort((x, y) => (x.status !== "running") - (y.status !== "running"));  // running first, stable
+const isDark = () => document.documentElement.dataset.theme === "dark";
+
+function openChart(t) {
+  $("#chartTitle").textContent = t;
+  $("#chartFrame").src = `https://s.tradingview.com/widgetembed/?symbol=${encodeURIComponent(t)}&interval=5&theme=${isDark() ? "dark" : "light"}` +
+    "&style=1&timezone=America%2FNew_York&withdateranges=1&hide_side_toolbar=1&saveimage=0&locale=en";
+  $("#stockChart").showModal();
+}
+$("#stockChart").addEventListener("close", () => { $("#chartFrame").src = "about:blank"; });
+
+function toast(m) { const t = $("#toast"); t.textContent = m; t.hidden = false; clearTimeout(toast.h); toast.h = setTimeout(() => t.hidden = true, 2200); }
+async function post(path, body) {
+  const r = await fetch(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) });
+  if (!r.ok) { const e = await r.json().catch(() => ({})); toast(e.error || "That didn't work. Is the bot service running?"); throw new Error(); }
+  await load();
+}
+async function load() {
+  try {
+    const r = await fetch("/api/state", { cache: "no-store" });
+    S = await r.json();
+    render();
+  } catch {
+    $("#healthPill").className = "st warn";
+    $("#healthPill").lastElementChild.textContent = "Service not reachable";
+  }
+}
+
+// ---------- navigation (kept in the URL hash, e.g. #bots/gapper) ----------
+function applyHash() {
+  const [t, b] = location.hash.slice(1).split("/");
+  tab = TABS.includes(t) ? t : "overview";
+  if (b) selBot = b;
+  document.querySelectorAll("[data-view]").forEach((v) => v.hidden = v.dataset.view !== tab);
+  document.querySelectorAll("nav.side button").forEach((x) => x.dataset.tab === tab ? x.setAttribute("aria-current", "page") : x.removeAttribute("aria-current"));
+  if (S) render();
+}
+const go = (t, b) => { location.hash = b ? `${t}/${b}` : t; };
+window.addEventListener("hashchange", applyHash);
+
+function render() {
+  renderStatus();
+  renderOverview();
+  renderBots();
+  renderTrades();
+  renderPremarket();
+  renderSettings();
+}
+
+function renderStatus() {
+  const m = S.market, mp = $("#marketPill");
+  mp.className = "st" + (m.open ? " live" : "");
+  mp.lastElementChild.textContent = m.open ? `Market open · closes ${localTime(m.closes_at)}`
+    : `Market closed · opens ${new Date(m.next_open * 1000).toLocaleString([], { weekday: "short", hour: "2-digit", minute: "2-digit" })}`;
+  const h = S.health, hp = $("#healthPill");
+  // Hide a one-off error once a minute of clean updates has passed; a repeating error keeps refreshing last_error_at.
+  const recentErr = h.last_error_at && S.now - h.last_error_at < 900 && !(h.last_tick - h.last_error_at > 60);
+  hp.className = "st" + (recentErr ? " warn" : h.last_tick && S.now - h.last_tick < 180 ? " live" : "");
+  hp.lastElementChild.textContent = recentErr ? h.last_error.slice(0, 50)
+    : h.last_tick ? `Updated ${Math.max(0, Math.round((S.now - h.last_tick) / 60))} min ago` : (m.open ? "Starting…" : "Bots idle");
+  hp.title = h.last_error || "";
+  const day = Math.min(S.test.day, S.test.days);
+  $("#testLabel").textContent = S.test.day > S.test.days ? `Test finished ${S.test.end}` : `Day ${day} of ${S.test.days} · ends ${S.test.end}`;
+  $("#testBar").style.width = `${Math.min(100, day / S.test.days * 100)}%`;
+}
+
+// ---------- overview ----------
+function renderOverview() {
+  const bots = S.bots, run = bots.filter((b) => b.status === "running");
+  const today = bots.reduce((a, b) => a + (b.stats.today_pnl || 0), 0), net = bots.reduce((a, b) => a + (b.stats.net_pnl || 0), 0);
+  const fees = bots.reduce((a, b) => a + (b.stats.fees || 0), 0);
+  const pos = bots.flatMap((b) => b.positions.map((p) => ({ ...p, bot: b })));
+  const ctl = bots.find((b) => b.id === "control");
+  const best = run.filter((b) => b.id !== "control").sort((a, b) => b.stats.return_pct - a.stats.return_pct)[0];
+  // every bot but the Control yardstick, paused ones included (their results still count), in dollars after fees, plus % of the money they started with
+  const pool = bots.filter((b) => b.id !== "control"), poolNet = pool.reduce((a, b) => a + (b.stats.net_pnl || 0), 0);
+  const poolPct = pool.length ? poolNet / (pool.length * 1000) * 100 : null;
+  $("#ovSub").textContent = `${run.length} bots running with $1,000 each, on real US prices. No real money.`;
+  $("#figures").innerHTML = `
+    <div class="figure"><span class="label">Today, all bots</span><span class="v ${cls(today)}">${money(today, true)}</span><span class="sub">${pos.length ? `${pos.length} open position${pos.length === 1 ? "" : "s"}` : "No open positions"}</span></div>
+    <div class="figure"><span class="label">Since the start</span><span class="v ${cls(net)}">${money(net, true)}</span><span class="sub">After ${money(fees)} fees (${money(net + fees, true)} before fees, ${fees > 0 && net + fees > 0 ? Math.round(fees / (net + fees) * 100) + "% of it to fees" : "fees exceed the gain"}), ${bots.reduce((a, b) => a + b.stats.trades, 0)} trades</span></div>
+    <div class="figure"><span class="label">Since the start, without Control</span><span class="v ${cls(poolNet)}">${money(poolNet, true)}</span><span class="sub">After fees, ${pool.reduce((a, b) => a + b.stats.trades, 0)} trades (${pct(poolPct)} on ${pool.length} bots)</span></div>
+    <div class="figure"><span class="label">Best bot</span><span class="v ${cls(best && best.stats.return_pct)}">${best ? pct(best.stats.return_pct) : "–"}</span><span class="sub">${best ? esc(best.name) : "–"}, against Control ${ctl ? pct(ctl.stats.return_pct) : "–"}</span></div>`;
+
+  const rows = [...bots].sort((a, b) => (a.status !== "running") - (b.status !== "running") || b.stats.return_pct - a.stats.return_pct);
+  $("#board").innerHTML = `<table><thead><tr><th>Bot</th><th class="r">Return</th><th class="r">Today</th><th class="r">Fees</th><th class="r">Trades</th></tr></thead><tbody>
+    ${rows.map((b) => `<tr class="go ${b.status}" data-goto="${b.id}"><td><span class="name">${esc(b.name)}</span>${b.status !== "running" ? `<span class="pill">paused</span>` : b.id === "control" ? `<span class="pill">yardstick</span>` : ""}</td>
+      <td class="r ${cls(b.stats.return_pct)}">${pct(b.stats.return_pct)}</td><td class="r ${cls(b.stats.today_pnl)}">${Math.abs(b.stats.today_pnl) < 0.005 ? `<span class="faint">–</span>` : money(b.stats.today_pnl, true)}</td>
+      <td class="r muted" title="Fees paid since the start, already taken off the return">${money(b.stats.fees || 0)}</td><td class="r muted">${b.stats.trades}</td></tr>`).join("")}</tbody></table>`;
+
+  $("#positions").innerHTML = pos.length ? `<table><thead><tr><th>Stock</th><th>Bot</th><th class="r">Entry</th><th class="r">Now</th><th class="r">Stop</th><th class="r">P&amp;L</th></tr></thead><tbody>
+    ${pos.map((p) => `<tr><td>${sym(p.ticker)}${p.side < 0 ? `<span class="pill short">short</span>` : ""}</td><td class="muted">${esc(p.bot.name)}</td>
+      <td class="r">${p.entry_price.toFixed(2)}</td><td class="r">${p.price.toFixed(2)}</td><td class="r muted" title="${p.risk_pct == null ? "" : "Loss at the stop: " + p.risk_pct.toFixed(2) + "% of equity"}">${p.stop.toFixed(2)}</td>
+      <td class="r ${cls(p.unrealized)}">${money(p.unrealized, true)}</td></tr>`).join("")}
+    </tbody></table>` : `<div class="empty" style="padding:0">None${S.market.open ? " right now" : ". Bots only trade while the US market is open"}.</div>`;
+
+  $("#events").innerHTML = S.events.length ? S.events.slice(0, 6).map((e) => {
+    const b = S.bots.find((x) => x.id === e.bot_id);
+    return `<li><time>${localDay(e.ts)}<br>${localTime(e.ts)}</time><span>${b ? `<b>${esc(b.name)}</b> · ` : ""}${esc(e.msg)}</span></li>`;
+  }).join("") : `<li class="empty" style="display:block">Trades, setting changes and errors will show up here.</li>`;
+
+  renderChart();
+}
+
+// ---------- the return chart: chosen bots in colour, the rest grey; Control and SPY as neutral yardsticks ----------
+function renderChart() {
+  const series = S.bots.map((b) => ({ id: b.id, name: b.name, pts: (S.equity[b.id] || []).map(([t, e]) => [t, (e / 1000 - 1) * 100]) }));
+  const bench = S.benchmark.length ? S.benchmark.map(([t, p]) => [t, (p / S.benchmark[0][1] - 1) * 100]) : [];
+  $("#legend").innerHTML = series.filter((s) => s.id !== "control").map((s) =>
+    `<button type="button" data-hl="${s.id}" aria-pressed="${hl.has(s.id)}" style="--c:${color(s.id)}"><i></i>${esc(s.name)}</button>`).join("");
+  const all = [...new Set([...series.flatMap((s) => s.pts.map((p) => p[0])), ...bench.map((p) => p[0])])].sort((a, b) => a - b);
+  if (all.length < 2) { $("#chart").innerHTML = `<div class="empty">The chart fills in once the bots have traded through some market time.</div>`; CH = null; return; }
+  // x is session time: overnight gaps are squeezed out so each trading day gets equal width.
+  const idx = new Map(all.map((t, i) => [t, i]));
+  const ff = (pts) => { const out = []; let j = 0, v = null; for (const t of all) { while (j < pts.length && pts[j][0] <= t) v = pts[j++][1]; out.push(v); } return out; };
+  const vals = [0, ...series.flatMap((s) => s.pts.map((p) => p[1])), ...bench.map((p) => p[1])];
+  let lo = Math.min(...vals), hi = Math.max(...vals);
+  const pad = Math.max(0.4, (hi - lo) * 0.1); lo -= pad; hi += pad;
+  const W = 1000, H = 340, L = 48, R = 170, T = 8, B = 28;
+  const x = (i) => L + i / (all.length - 1) * (W - L - R), y = (v) => T + (hi - v) / (hi - lo) * (H - T - B);
+  const step = [0.25, 0.5, 1, 2, 5, 10, 20].find((s) => (hi - lo) / s <= 5) || 50;
+  const ticks = []; for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) ticks.push(+v.toFixed(2));
+  const days = []; let prev = null;
+  all.forEach((t, i) => { const d = new Date(t * 1000).toLocaleDateString("en-CA", { timeZone: "America/New_York" }); if (d !== prev) { days.push(i); prev = d; } });
+  const every = Math.ceil(days.length / 8);
+  const path = (pts) => pts.map((p, i) => `${i ? "L" : "M"}${x(idx.get(p[0])).toFixed(1)},${y(p[1]).toFixed(1)}`).join("");
+  const ctl = series.find((s) => s.id === "control");
+  const shown = series.filter((s) => hl.has(s.id) && s.pts.length);
+  const ghosts = series.filter((s) => s.id !== "control" && !hl.has(s.id) && s.pts.length);
+  // direct labels at the line ends, nudged apart so they don't collide
+  const labels = [...shown.map((s) => ({ name: s.name, v: s.pts.at(-1)[1], c: color(s.id) })),
+    ...(ctl && ctl.pts.length ? [{ name: "Control", v: ctl.pts.at(-1)[1], c: "var(--bot-control)" }] : []),
+    ...(bench.length ? [{ name: "SPY", v: bench.at(-1)[1], c: "var(--bench)" }] : [])].map((l) => ({ ...l, y: y(l.v) })).sort((a, b) => a.y - b.y);
+  for (let i = 1; i < labels.length; i++) labels[i].y = Math.max(labels[i].y, labels[i - 1].y + 17);
+  CH = { all, x, W, L, R, rows: [...shown.map((s) => ({ name: s.name, c: color(s.id), v: ff(s.pts) })),
+    ...(ctl ? [{ name: "Control", c: "var(--bot-control)", v: ff(ctl.pts) }] : []), ...(bench.length ? [{ name: "SPY", c: "var(--bench)", v: ff(bench) }] : [])] };
+  const F = 'font-family="Inter, system-ui, sans-serif" font-size="13"';
+  $("#chart").innerHTML = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Return of each bot and SPY since the test started">
+    ${ticks.map((v) => `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" stroke="${v === 0 ? "var(--line-2)" : "var(--line)"}"/>
+      <text x="${L - 10}" y="${y(v) + 4}" text-anchor="end" ${F} fill="var(--ink-3)">${v > 0 ? "+" : ""}${v}%</text>`).join("")}
+    ${days.map((i, k) => k % every === 0 ? `<text x="${x(i)}" y="${H - 6}" ${F} fill="var(--ink-3)">${localDay(all[i])}</text>` : "").join("")}
+    ${ghosts.map((s) => `<path d="${path(s.pts)}" fill="none" stroke="var(--ghost)" stroke-width="1.3" stroke-linejoin="round"/>`).join("")}
+    ${bench.length ? `<path d="${path(bench)}" fill="none" stroke="var(--bench)" stroke-width="1.5" stroke-dasharray="5 4"/>` : ""}
+    ${ctl && ctl.pts.length ? `<path d="${path(ctl.pts)}" fill="none" stroke="var(--bot-control)" stroke-width="1.8" stroke-dasharray="1 3.5" stroke-linecap="round"/>` : ""}
+    ${shown.map((s) => `<path d="${path(s.pts)}" fill="none" stroke="${color(s.id)}" stroke-width="2" stroke-linejoin="round"/>
+      <circle cx="${x(idx.get(s.pts.at(-1)[0]))}" cy="${y(s.pts.at(-1)[1])}" r="4" fill="${color(s.id)}" stroke="var(--card)" stroke-width="2"/>`).join("")}
+    ${labels.map((l) => `<circle cx="${W - R + 12}" cy="${l.y}" r="4" fill="${l.c}"/>
+      <text x="${W - R + 22}" y="${l.y + 4.5}" ${F} fill="var(--ink-2)">${esc(l.name)} <tspan fill="var(--ink)" font-weight="600">${pct(l.v)}</tspan></text>`).join("")}
+    <line id="xh" x1="0" x2="0" y1="${T}" y2="${H - B}" stroke="var(--line-2)" stroke-width="1" visibility="hidden"/>
+    <rect x="${L}" y="${T}" width="${W - L - R}" height="${H - T - B}" fill="transparent" id="hit"/>
+  </svg><div class="tip" id="tip" hidden></div>`;
+}
+function chartHover(e) {
+  if (!CH || e.target.id !== "hit") return chartLeave();
+  const svg = $("#chart svg"), r = svg.getBoundingClientRect(), k = CH.W / r.width;
+  const px = (e.clientX - r.left) * k, i = Math.max(0, Math.min(CH.all.length - 1, Math.round((px - CH.L) / (CH.W - CH.L - CH.R) * (CH.all.length - 1))));
+  const xh = $("#xh"); xh.setAttribute("x1", CH.x(i)); xh.setAttribute("x2", CH.x(i)); xh.setAttribute("visibility", "visible");
+  const rows = CH.rows.filter((s) => s.v[i] != null).sort((a, b) => b.v[i] - a.v[i]);
+  const tip = $("#tip"); tip.hidden = false;
+  tip.innerHTML = `<div class="faint" style="margin-bottom:6px">${localDay(CH.all[i])}, ${localTime(CH.all[i])}</div>` +
+    rows.map((s) => `<div><span><span class="dot-c" style="--c:${s.c}"></span>${esc(s.name)}</span><span class="${cls(s.v[i])}">${pct(s.v[i])}</span></div>`).join("");
+  const left = CH.x(i) / k, cw = r.width;
+  tip.style.left = (left + 14 + tip.offsetWidth > cw ? left - 14 - tip.offsetWidth : left + 14) + "px";
+  tip.style.top = "6px";
+}
+function chartLeave() { const t = $("#tip"), xh = $("#xh"); if (t) t.hidden = true; if (xh) xh.setAttribute("visibility", "hidden"); }
+$("#chart").addEventListener("pointermove", chartHover);
+$("#chart").addEventListener("pointerleave", chartLeave);
+
+// ---------- bots ----------
+function renderBots() {
+  const list = ordered();
+  if (!selBot || !S.bots.some((b) => b.id === selBot)) selBot = list[0].id;
+  const item = (b) => `<button type="button" data-goto="${b.id}" aria-current="${b.id === selBot}"><span>${esc(b.name)}</span><span class="small ${cls(b.stats.return_pct)}">${pct(b.stats.return_pct)}</span></button>`;
+  const run = list.filter((b) => b.status === "running"), paused = list.filter((b) => b.status !== "running");
+  $("#botlist").innerHTML = `<span class="grp">Running</span>${run.map(item).join("")}` + (paused.length ? `<span class="grp">Paused</span>${paused.map(item).join("")}` : "");
+
+  const b = S.bots.find((x) => x.id === selBot), s = b.stats;
+  const recent = S.trades.filter((t) => t.bot_id === b.id).slice(0, 5);
+  const kpi = (l, v, c = "") => `<div><span class="label">${l}</span><span class="v ${c}">${v}</span></div>`;
+  $("#botDetail").innerHTML = `<article class="card detail">
+    <div class="detail-head"><div><h1>${esc(b.name)}</h1><p>${esc(b.blurb)}</p></div><span class="pill ${b.status}">${b.status}</span></div>
+    <div><div class="equity"><span class="big">${money(s.equity)}</span><span class="${cls(s.return_pct)}" style="font-weight:600">${pct(s.return_pct)}</span>
+      <span class="muted small">Today ${money(s.today_pnl, true)}</span></div></div>
+    <div><div class="kpis">
+      ${kpi("Trades", s.trades)}
+      ${kpi("Win rate", s.win_rate == null ? "–" : s.win_rate.toFixed(0) + "%")}
+      ${kpi("Profit factor", s.profit_factor == null ? "–" : s.profit_factor.toFixed(2))}
+      ${kpi("Max drawdown", s.max_drawdown_pct.toFixed(1) + "%")}
+    </div>
+    <div class="extra"><span>Avg win ${money(s.avg_win)}</span><span>Avg loss ${money(s.avg_loss)}</span><span>Fees ${money(s.fees)}</span>
+      <span>Est. tax ${money(s.est_tax)}</span><span title="Losing trades where the same stock was bought again within 30 days. For US tax the loss is deferred.">Wash-sale losses ${s.wash_sale_losses} of ${s.losses}</span></div></div>
+    ${HOW[b.strategy] ? `<div><h3>How it works</h3>
+      <dl class="how">${HOW[b.strategy](b.params).map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}</dl>
+      <p class="note" style="margin-top:14px">${esc(SHARED_HOW)}</p></div>` : ""}
+    <div><h3>Recent trades</h3>
+      ${recent.length ? `<div class="table-wrap">${tradeTable(recent, false)}</div>` : `<div class="empty" style="padding:0">No closed trades yet.</div>`}</div>
+    <div class="actions">
+      <button class="btn" type="button" data-act="${b.status === "running" ? "pause" : "resume"}" data-bot="${b.id}">${b.status === "running" ? "Pause new trades" : "Resume"}</button>
+      <button class="btn" type="button" data-act="settings" data-bot="${b.id}">Settings</button>
+      ${confirmReset === b.id
+        ? `<button class="btn danger" type="button" data-act="reset-yes" data-bot="${b.id}">Reset to $1,000</button><button class="btn quiet" type="button" data-act="reset-no">Keep</button>`
+        : `<button class="btn quiet" type="button" data-act="reset" data-bot="${b.id}">Reset</button>`}
+    </div>
+  </article>`;
+}
+
+// ---------- trades ----------
+function tradeTable(trades, withBot) {
+  return `<table><thead><tr><th>Closed</th>${withBot ? "<th>Bot</th>" : ""}<th>Stock</th><th class="r">Entry</th><th class="r">Exit</th><th class="r">Held</th><th class="r">P&amp;L</th><th class="r">%</th><th>Why in</th><th>Why out</th></tr></thead><tbody>
+    ${trades.map((t) => `<tr><td class="muted">${localDay(t.exit_ts)}, ${localTime(t.exit_ts)}</td>${withBot ? `<td>${esc(botOf(t.bot_id).name)}</td>` : ""}
+      <td>${sym(t.ticker)}${t.side < 0 ? `<span class="pill short">short</span>` : ""}</td>
+      <td class="r">${t.entry_price.toFixed(2)}</td><td class="r">${t.exit_price.toFixed(2)}</td><td class="r muted">${Math.round((t.exit_ts - t.entry_ts) / 60)}m</td>
+      <td class="r ${cls(t.pnl)}">${money(t.pnl, true)}</td><td class="r ${cls(t.pnl)}">${pct(t.pnl_pct)}</td>
+      <td class="wrap">${esc(t.why)}</td><td class="wrap">${esc(t.exit_reason)}</td></tr>`).join("")}
+  </tbody></table>`;
+}
+function renderTrades() {
+  const sel = $("#tradeFilter");
+  if (document.activeElement !== sel) sel.innerHTML = [["all", "All bots"], ...ordered().map((b) => [b.id, b.name])]
+    .map(([k, n]) => `<option value="${k}" ${tradeFilter === k ? "selected" : ""}>${esc(n)}</option>`).join("");
+  const trades = S.trades.filter((t) => tradeFilter === "all" || t.bot_id === tradeFilter);
+  const net = trades.reduce((a, t) => a + t.pnl, 0), wins = trades.filter((t) => t.pnl > 0).length;
+  $("#tradeSummary").innerHTML = trades.length ? `${trades.length} trades, ${wins} winners, <span class="${cls(net)}">${money(net, true)}</span> net` : "No closed trades yet.";
+  $("#trades").innerHTML = trades.length ? tradeTable(trades, true) : `<div class="empty" style="padding:0">No closed trades yet.</div>`;
+}
+
+// ---------- premarket ----------
+function renderPremarket() {
+  const r = S.premarket;
+  $("#pmRefresh").disabled = S.report_building;
+  $("#pmRefresh").textContent = S.report_building ? "Building… (about a minute)" : "Rebuild now";
+  if (!r) return;
+  renderPremarketBody(r);
+}
+
+function renderPremarketBody(r) {
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+  $("#pmTitle").textContent = `Premarket, ${new Date(r.date + "T12:00").toLocaleDateString([], { weekday: "long", day: "numeric", month: "short" })}`;
+  $("#pmMeta").textContent = `Built ${r.generated_et} ET${r.late ? " (after the open)" : ""} from ${r.scanned} stocks${r.date !== today ? " · not today's report" : ""}`;
+  const vol = (v) => v == null ? "–" : v >= 1e6 ? (v / 1e6).toFixed(1) + "M" : Math.round(v / 1e3) + "k";
+  const act = (x) => x.pm_rvol != null ? `${x.pm_rvol.toFixed(1)}× usual` : x.pm_pct_adv != null ? `${x.pm_pct_adv.toFixed(1)}% of daily vol` : "–";
+  const news = (x) => x.news && x.news.length ? `<a class="ellipsis" href="${esc(x.news[0].link)}" target="_blank" rel="noopener">${esc(x.news[0].title)}</a>` : `<span class="faint">No news in the last 18 h</span>`;
+  $("#pmBody").innerHTML = `
+    <div class="card"><div class="context">${r.context.map((c) => `<span><span class="muted">${esc(c.label)}</span> <b>${c.price == null ? "–" : (+c.price).toLocaleString("en-US", { maximumFractionDigits: 2 })}</b> <span class="${cls(c.change_pct)}">${c.change_pct == null ? "" : pct(c.change_pct)}</span></span>`).join("")}</div></div>
+    <div class="card"><div class="card-head"><h2>In play today</h2><span class="faint small">The Gapper bot trades these</span></div>
+      <div class="inplay">${r.in_play_rows.length ? r.in_play_rows.map((x) => `<div class="chip"><b>${sym(x.symbol)} <span class="up" style="font-weight:500">${pct(x.gap_pct)}</span></b><span class="muted small">${vol(x.pm_volume)} premarket · ${act(x)}</span></div>`).join("")
+        : `<span class="muted">Nothing qualifies today (gap up of 2% or more with unusual premarket volume), so the Gapper bot sits out.</span>`}</div></div>
+    <div class="two">
+      <div class="card"><div class="card-head"><h2>Biggest gaps</h2><span class="faint small">2% or more</span></div><div class="table-wrap">
+        ${r.gappers.length ? `<table><thead><tr><th>Stock</th><th class="r">Gap</th><th class="r">Price</th><th class="r">Premarket</th><th>Latest news</th></tr></thead><tbody>
+        ${r.gappers.slice(0, 12).map((x) => `<tr><td>${sym(x.symbol)}</td><td class="r ${cls(x.gap_pct)}">${pct(x.gap_pct)}</td><td class="r">${x.price.toFixed(2)}</td><td class="r muted" title="${act(x)}">${vol(x.pm_volume)}</td><td>${news(x)}</td></tr>`).join("")}</tbody></table>`
+        : `<div class="empty" style="padding:0">No stock in the scan is gapping 2% or more.</div>`}</div></div>
+      <div class="card"><div class="card-head"><h2>Watchlist</h2></div><div class="wl">${[...r.watchlist].sort((a, b) => Math.abs(b.gap_pct) - Math.abs(a.gap_pct)).map((x) =>
+        `<div>${sym(x.symbol)}<span class="${cls(x.gap_pct)}">${pct(x.gap_pct)}</span>${news(x)}</div>`).join("")}</div></div>
+    </div>`;
+}
+
+// ---------- settings ----------
+function renderSettings() {
+  const wl = $("#watchlist");
+  if (document.activeElement !== wl) wl.value = S.watchlist.join(", ");
+  const A = S.account;
+  $("#ruleAccount").innerHTML = A.type === "cash"
+    ? "<b>Cash account.</b> No short selling and no Pattern Day Trader limit. Each day a bot can only buy with cash that was settled at the open (T+1), so money from today's sales can't be reused until tomorrow."
+    : "<b>Margin account.</b> No day-trade limit: the Pattern Day Trader rule and its $25,000 minimum were removed in 2026 (IBKR from June 4). Today's sale proceeds can be reused right away. Short selling needs at least $2,000 equity (Reg T), so a bot below that is long only. No borrowing: positions never exceed the bot's equity.";
+  $("#ruleTax").innerHTML = `<b>Costs and tax.</b> IBKR Pro Tiered: $${A.commission_per_share}/share, at least $${A.commission_min} per order, plus SEC and FINRA fees on sales and ${A.slippage_pct}% slippage. Profits are shown before tax, with an estimated ${A.tax_pct}% tax on gains (set yours below).`;
+  const af = $("#accountForm");
+  if (!af.dataset.dirty && !af.contains(document.activeElement)) Object.entries(A).forEach(([k, v]) => { const el = $(`#a-${k}`); if (el) el.value = v; });
+  $("#restartWrap").innerHTML = confirmRestart
+    ? `<button class="btn danger" id="restartYes" type="button">Erase all bots' history and restart</button> <button class="btn quiet" id="restartNo" type="button">Keep</button>`
+    : `<button class="btn danger" id="restartBtn" type="button">Restart 30-day test</button>`;
+}
+
+function openSettings(id) {
+  const b = S.bots.find((x) => x.id === id); editing = id;
+  $("#settingsTitle").textContent = `${b.name} settings`;
+  $("#settingsFields").innerHTML = Object.entries(b.defaults).map(([k, d]) => {
+    const v = b.params[k], lab = LABELS[k] || k;
+    if (typeof d === "boolean") return `<label class="field check"><input type="checkbox" id="p-${k}" name="${k}" ${v ? "checked" : ""}><span>${lab}</span></label>`;
+    if (typeof d === "string") return `<label class="field"><span class="label">${lab}</span><input type="text" id="p-${k}" name="${k}" value="${esc(v)}" pattern="\\d{2}:\\d{2}" required></label>`;
+    return `<label class="field"><span class="label">${lab} <span class="faint">(default ${d})</span></span><input type="number" step="any" id="p-${k}" name="${k}" value="${v}" required></label>`;
+  }).join("");
+  $("#settings").showModal();
+}
+
+function themeLabel() { $("#themeBtn").textContent = isDark() ? "Light mode" : "Dark mode"; }
+
+document.addEventListener("change", (e) => { if (e.target.id === "tradeFilter") { tradeFilter = e.target.value; renderTrades(); } });
+document.addEventListener("click", async (e) => {
+  if (e.target.id === "chartClose" || e.target.id === "stockChart") { $("#stockChart").close(); return; }  // button or backdrop
+  const sy = e.target.closest("[data-sym]"); if (sy) { openChart(sy.dataset.sym); return; }
+  const g = e.target.closest("[data-goto]"); if (g) { selBot = g.dataset.goto; confirmReset = null; go("bots", selBot); return; }
+  const t = e.target.closest("button"); if (!t) return;
+  if (t.dataset.tab) { go(t.dataset.tab, t.dataset.tab === "bots" ? selBot : null); return; }
+  if (t.dataset.hl) { hl.has(t.dataset.hl) ? hl.delete(t.dataset.hl) : hl.add(t.dataset.hl); localStorage.setItem("chartHighlight", JSON.stringify([...hl])); renderChart(); return; }
+  if (t.id === "themeBtn") {
+    if (isDark()) delete document.documentElement.dataset.theme; else document.documentElement.dataset.theme = "dark";
+    localStorage.setItem("theme", isDark() ? "dark" : "light"); themeLabel(); return;
+  }
+  const id = t.dataset.bot;
+  switch (t.dataset.act) {
+    case "pause": await post(`/api/bots/${id}/pause`); toast("Paused. Open positions still exit normally."); return;
+    case "resume": await post(`/api/bots/${id}/resume`); toast("Resumed"); return;
+    case "settings": openSettings(id); return;
+    case "reset": confirmReset = id; render(); return;
+    case "reset-no": confirmReset = null; render(); return;
+    case "reset-yes": confirmReset = null; await post(`/api/bots/${id}/reset`); toast("Bot reset to $1,000"); return;
+  }
+  if (t.id === "pmRefresh") { await post("/api/premarket/refresh"); toast("Building the report. It takes about a minute."); return; }
+  if (t.id === "saveAccount") {
+    const f = $("#accountForm"); if (!f.reportValidity()) return;
+    await post("/api/account", { account: Object.fromEntries(new FormData(f)) }); delete f.dataset.dirty; toast("Account rules saved");
+  }
+  if (t.id === "saveWatchlist") { await post("/api/watchlist", { tickers: $("#watchlist").value.split(/[\s,]+/) }); toast("Watchlist saved"); }
+  if (t.id === "restartBtn") { confirmRestart = true; render(); }
+  if (t.id === "restartNo") { confirmRestart = false; render(); }
+  if (t.id === "restartYes") { confirmRestart = false; await post("/api/restart-test"); toast("Test restarted. Day 1 starts now."); }
+  if (t.id === "settingsDefaults") { const b = S.bots.find((x) => x.id === editing); Object.entries(b.defaults).forEach(([k, d]) => { const el = $(`#p-${k}`); if (typeof d === "boolean") el.checked = d; else el.value = d; }); }
+  if (t.id === "settingsSave") {
+    const f = $("#settingsForm"); if (!f.reportValidity()) return;
+    const b = S.bots.find((x) => x.id === editing), params = {};
+    Object.entries(b.defaults).forEach(([k, d]) => { const el = $(`#p-${k}`); params[k] = typeof d === "boolean" ? el.checked : el.value; });
+    await post(`/api/bots/${editing}/params`, { params }); $("#settings").close(); toast("Settings saved");
+  }
+});
+
+document.addEventListener("input", (e) => { if (e.target.closest("#accountForm")) $("#accountForm").dataset.dirty = "1"; });
+themeLabel();
+applyHash();
+load();
+setInterval(load, 15000);
+</script>
+</body>
+</html>

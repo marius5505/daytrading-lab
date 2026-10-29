@@ -1,0 +1,13 @@
+state/
+history/
+reports/
+stress/cache*/
+stress/algos/results.*
+results.*
+__pycache__/
+*.pyc
+*.db
+*.db-*
+.DS_Store
+.env
+.claude/settings.local.json
